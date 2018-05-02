@@ -89,8 +89,12 @@ class Directory(Path):
 		if name == '..': return self.parent
 		try: return self.children[name]
 		except KeyError: raise NotFoundException((str(self) + SEPARATOR if self.name else '') + name)
-	def has_child(self, name): return name in self.children
+	def has_child(self, name):
+		if name == '.': return self
+		if name == '..': return self.parent
+		return name in self.children
 	def remove_child(self, name):
+		if name in ('.', '..'): raise ValueError('Cannot remove current working directory or its parent!')
 		try: del self.children[name]
 		except KeyError: raise NotFoundException((str(self) + SEPARATOR if self.name else '') + name)
 	def __del__(self):

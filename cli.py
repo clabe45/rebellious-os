@@ -67,7 +67,7 @@ def process(i, scope=env.variables, _piped_input=None):
 	options = ''
 	if len(args) > 0:
 		all_symbols = [c.isalnum() for c in args[0]].count(True) == 0
-		if all_symbols and not path.SEPARATOR in args[0]:
+		if all_symbols and not (path.SEPARATOR in args[0] or '.' in args[0]):
 			options = args[0]
 			args.pop(0)
 	for x,arg in enumerate(args):
@@ -111,7 +111,7 @@ def process(i, scope=env.variables, _piped_input=None):
 			if script.name == command_name:
 				script.execute(args, options, scope)
 				break
-		else: raise run.NoSuchProgramException(command_name)
+		else: raise run.NoSuchCommandException(command_name)
 
 class CliException(Exception): pass
 class EmptyException(CliException): pass

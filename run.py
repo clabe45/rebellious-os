@@ -8,7 +8,6 @@ import env
 import internal
 
 # TODO: change script and prog functions to store path (reference) instead of data (value), and remove update subcommand
-# TODO: add % operator to math section, and comparison operators
 
 class Runnable():
 	"""An object that can be run from the terminal"""
@@ -474,4 +473,4 @@ class RunException(Exception): pass
 class ArgumentException(RunException): pass
 class ArgumentCountException(RunException): pass
 class OptionException(RunException): pass
-class NoSuchProgramException(RunException): pass
+class NoSuchCommandException(RunException): pass

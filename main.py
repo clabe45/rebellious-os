@@ -2,7 +2,7 @@
 You guess what it is :>
 """
 # TODO: LOOK FOR CROSS-REFERNCING (OKAY IN PYTHON?) for files
-print('*Starting...')
+print('*REBELLIOUS OS loading...')
 
 import cli
 import run
@@ -15,7 +15,7 @@ def boot():
 		try: cli.process(i)
 		except cli.EmptyException: pass
 		except cli.SyntaxException as e: print('Syntax error: %s'%str(e))	# TODO: make more specific
-		except run.NoSuchProgramException as e: print('*Invalid program \'%s\'!' % str(e))
+		except run.NoSuchCommandException as e: print('*No such command \'%s\'!' % str(e))
 		except (run.ArgumentCountException, ValueError) as e: print('*'+str(e))
 		except run.ArgumentException as e: print('*'+str(e))
 		except run.OptionException as e: print('*'+str(e))
