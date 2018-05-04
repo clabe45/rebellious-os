@@ -1,6 +1,6 @@
-variables = {}
 UNDEFINED_STRING = '{undefined}'
 
+variables = {}
 CONSTANTS = {
     'OS-NAME': 'Rebellious',
     'OS-VERSION': '0.1'

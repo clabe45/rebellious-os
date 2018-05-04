@@ -11,9 +11,12 @@ import internal
 TODO: change script and prog functions to store path (reference) instead of data (value), and remove update subcommand
 and write files in a separate module (because this is getting huge!)
 TODO: figure out whether to end every error with '!' or not (and which ones if not)
-TODO: account for escaped semicolons when splitting in Script
+TODO: also figure out which commands should produce output and which ones shouldn't
 TODO: sometime, make an update_aliases function when the alias list is modified, for caching the tokenized alias/syntax pairs
 (for efficiency)
+TODO: add <strike>copy</strike>, gt, lt, ge, lt commands
+TODO: add documentation (descriptions) for the ^ option
+TODO?: error wrong argument count, instead of no such command, with aliases with the wrong syntax (argument count)
 """
 
 class Runnable():
@@ -21,7 +24,8 @@ class Runnable():
 
 	def __init__(self, name, options, description, arg_usage):
 		self.name = name
-		self.usage = '%s%s %s' % (name, ' (%s)'%options if options else '', arg_usage)	# this way, there are no repeated substrings
+		# this way (using ``options`` as a separate value), there are no repeated substrings
+		self.usage = '%s%s%s' % (name, (' (%s)'%options) if options else '', (' '+arg_usage) if arg_usage else '')
 		self.description = description
 		if path.SEPARATOR in options: raise ArgumentException("'%s' cannot be an option!" % path.SEPARATOR)
 		self.options = options
@@ -157,13 +161,43 @@ def delete_function(args, options, scope):
 		if option not in '_': raise OptionException(option)
 
 	p = args[0]
-	silent = '_' in options
+	silent, recursive = '_' in options, '^' in options
 
 	if not silent:
 		if not confirm('*Delete file \'%s\'? ' % p): return
-	try: path.remove(p)
+	try:
+		if recursive: path.get(p, path.Directory)
+		path.remove(p)	# the `recursive` options is for user clarity only
 	except (path.NotFoundException,path.DirectoryException) as e:
 		if not silent: raise e
+def copy_function(args, options, scope):
+	if len(args) != 2: raise ArgumentCountException()
+	sourcep, destp = args
+	source = path.get(sourcep)
+	recursive = '^' in options		# just for user clarity
+	if not recursive:
+		copy_file(sourcep, destp)
+	else:
+		dest = path.create(destp, {}) if not path.has(destp) else path.get(destp)
+		copy_dir_recursive(source, dest, '.')
+def copy_dir_recursive(source, dest, rel_path):
+	if rel_path != '.':
+		# because root dest dir is created in copy_function
+		dest.create(rel_path, {}) if not path.has(rel_path) else path.get(rel_path)
+	source_child = source.get(rel_path)
+	for name in source_child.children:
+		if type(source_child.children[name]) is path.Directory:
+			copy_dir_recursive(source, dest, rel_path + path.SEPARATOR + name)
+		else:
+			copy_file(
+				path.join([source.name, rel_path + path.SEPARATOR + name]),
+				path.join([dest.name, rel_path + path.SEPARATOR + name])
+			)
+def copy_file(sourcep, destp):	# let's just assume the args are valid
+	source = path.get(sourcep, path.File)
+	if not path.has(destp, path.File): path.create(destp, source.data)
+	else: path.get(destp).data = source.data
+
 def read_function(args, options, scope):
 	if len(args) != 1: raise ArgumentCountException()
 	p = args[0]
@@ -203,22 +237,51 @@ def get_function(args, options, scope):
 		return env.UNDEFINED_STRING
 def clear_function(args, options, scope):
 	os.system('cls' if os.name == 'nt' else 'clear')	# taken from https://stackoverflow.com/a/2084628/3783155
+	print()	# empty line
 
 # operators
 # logical
 def equal_function(args, options, scope):
-	if len(args) != 2: raise ArgumentException()
+	if len(args) != 2: raise ArgumentCountException()
 	return str(args[0] == args[1]).lower()
 def not_equal_function(args, options, scope):
-	if len(args) != 2: raise ArgumentException()
+	if len(args) != 2: raise ArgumentCountException()
 	return str(args[0] != args[1]).lower()
+def less_than_function(args, options, scope):
+	if len(args) != 2: raise ArgumentException()
+	silent = '_' in args
+	try:
+		return str(num(args[0]) < num(args[1])).lower()
+	except ValueError as e:
+		if not silent: raise e
+def greater_than_function(args, options, scope):
+	if len(args) != 2: raise ArgumentException()
+	silent = '_' in args
+	try:
+		return str(num(args[0]) > num(args[1])).lower()
+	except ValueError as e:
+		if not silent: raise e
+def less_than_equal_function(args, options, scope):
+	if len(args) != 2: raise ArgumentException()
+	silent = '_' in args
+	try:
+		return str(num(args[0]) <= num(args[1])).lower()
+	except ValueError as e:
+		if not silent: raise e
+def greater_than_equal_function(args, options, scope):
+	if len(args) != 2: raise ArgumentException()
+	silent = '_' in args
+	try:
+		return str(num(args[0]) >= num(args[1])).lower()
+	except ValueError as e:
+		if not silnet: raise e
 def not_function(args, options, scope):
-	if len(args) != 1: raise ArgumentException()
+	if len(args) != 1: raise ArgumentCountException()
 	if args[0] not in ('true', 'false'): raise ArgumentException("'%s' is not a boolean value" % args[0])
 	b = args[0] == 'true'
 	return str(not b).lower()
 def or_function(args, options, scope):
-	if len(args) != 2: raise ArgumentException()
+	if len(args) != 2: raise ArgumentCountException()
 	result = False
 	for arg in args:
 		if arg not in ('true', 'false'): raise ArgumentException("'%s' is not a boolean value" % arg)
@@ -226,7 +289,7 @@ def or_function(args, options, scope):
 		result = result or b
 	return str(result).lower()
 def and_function(args, options, scope):
-	if len(args) != 2: raise ArgumentException()
+	if len(args) != 2: raise ArgumentCountException()
 	result = True
 	for arg in args:
 		if arg not in ('true', 'false'): raise ArgumentException("'%s' is not a boolean value" % arg)
@@ -411,6 +474,13 @@ def confirm(prompt):
 	while not p.lower() in ('y', 'n'):
 		p = input('%s [Y/N] ' % prompt)
 	return p.lower() == 'y'
+def num(s):
+	# credits -> https://stackoverflow.com/a/379966/3783155
+	try:
+		return int(s)
+	except ValueError:
+		return float(s)
+	raise ValueError("'%s' is not a number!" % s)
 
 SCRIPT_EXTENSION = 's'
 PROGRAM_EXTENSION = 'p'
@@ -422,9 +492,13 @@ programs = set([
 	Program('to', '', '<dir>', 'changes the current working directory to `dir`', to_function),
 	Program('makedir', '_', '<name>', 'creates a directory as `name`', make_directory_function),
 	Program('makefile', '_', '<name>', 'creates a file as `name`', make_file_function),
-	Program('delete', '_', '<path>', 'deletes the item at `path`', delete_function),
+	Program('delete', '_^', '<path>', 'deletes the item at `path`, recursively if the `^` option is set', delete_function),
+	Program(
+		'copy', '_^', '<source> <dest>', 'copies the path at source to dest, recursively if the `^` option is set',
+		copy_function
+	),
 	Program('move', '_', '<old> <new>', 'changes the path of the item at `old` to `new`', move_function),
-	Program('read', '', '<path>', 'prints the contents of the file at `path`', read_function),
+	Program('read', '', '<file>', 'prints the contents of `file`', read_function),
 	Program(
 		'write', '+', '<path> <text>', 'writes the contents of the file at `path`, appending if `+` switch is set',
 		write_function
@@ -437,6 +511,10 @@ programs = set([
 	Program('get', '$', '<var>', 'prints the environment variable `var`, exactly like \'echo <`var`>\'', get_function),
 	Program('eq', '', '<val1> <val2>', 'tests if `val1` equals `val2`', equal_function),
 	Program('neq', '', '<val1> <val2>', 'tests if `val1` doesn\'t equal `val2`', not_equal_function),
+	Program('lt', '_', '<num1> <num2>', 'tests if `num1` is less than `num2`', less_than_function),
+	Program('gt', '_', '<num1> <num2>', 'tests if `num1` is greater than `num2`', greater_than_function),
+	Program('ge', '_', '<num1> <num2>', 'tests if `num1` is greater than or equal to `num2`', greater_than_equal_function),
+	Program('le', '_', '<num1> <num2>', 'tests if `num1` is less than or equal to `num2`', less_than_equal_function),
 	Program('not', '', '<bool>', 'negates `bool`', not_function),
 	Program('or', '', '<bool1> <bool2>', 'checks if either `bool1` or `bool2` are \'true\' inclusively', or_function),
 	Program('and', '', '<bool1> <bool2>', 'checks if both `bool1` and `bool2` are \'true\'', and_function),
@@ -479,10 +557,12 @@ aliases = {
 	'0 -> 1': 'alias 0 1',
 	'* 0': 'makefile 0',
 	'^ 0': 'makedir 0',
+	'+ 0 1': 'copy 0 1',
 	'~ 0 1': 'move 0 1',
-	'! 0': 'del 0',
+	'! 0': 'delete 0',
 	'- 0': 'to 0',
-	'/': 'list',
+	'/': 'list',	# TODO: make it smart so the user doesn't have to type in every possibility for syntax with aliases
+	'/ 0': 'list 0',
 	'0 = 1': 'set 0 1'
 }
 

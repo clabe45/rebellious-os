@@ -1,5 +1,7 @@
 import re
 # ERR, this uses circular referencing, but I don't know how to do it any different way; TODO: maybe use weakref
+# NOTE to self: beware of NotFoundException,DuplicateException,etc. because the str() representations *may be inaccurate*.
+# For instance, if there's an empty string or something in processing, than it will still display the error as the full input
 
 SEPARATOR = '/'
 SPECIAL_CHARACTERS_ALLOWED = '_-.';
@@ -23,55 +25,56 @@ class Path():
 
 	def rename(self, new):
 		# the following tests only apply to <em>re</em>naming a path, NOT initiating it with a name
-		try:
-			if self == root: return
-		except NameError: pass	# root isn't defined yet
-		if new == '': raise ValueError("Name cannot be empty!")
 
 		self.parent.remove_child(self.name)
 		self.set_name(new)
 		self.parent.put_child(self)
 
-	def _get(self, p):
-		"""Gets the Path descendent with the specified relative path ``p``"""
+	def get(self, p):
+		"""Get the Path descendent with the specified relative path ``p``"""
 
+		if p.endswith(SEPARATOR): p = p[:-1]
 		tokens = p.split(SEPARATOR)
 		next_child = self.get_child(tokens[0])
 		if len(tokens) > 1:
 			if not type(next_child) is Directory:
 				raise DirectoryException(str(self) + (SEPARATOR + next_child) if next_child else '')	# if File or None
-			return next_child._get(SEPARATOR.join(tokens[1:]))
+			return next_child.get(SEPARATOR.join(tokens[1:]))
 		return next_child
 
-	def _put(self, p, contents):
-		"""Puts the a new Path with contents to the specified relative path ``p``"""
+	def create(self, p, contents):
+		"""Create a new Path with contents and put it to the specified relative path ``p``"""
 
+		if p.endswith(SEPARATOR): p = p[:-1]
 		tokens = p.split(SEPARATOR)
 		if len(tokens) > 1:
 			next_child = self.get_child(tokens[0])
 			if not type(next_child) is Directory:
 				raise DirectoryException(str(self) + (SEPARATOR + next_child) if next_child else '')	# if File or None
-			next_child._put(SEPARATOR.join(tokens[1:]), contents)
+			return next_child.create(SEPARATOR.join(tokens[1:]), contents)
 		else:
-			path = None
-			if type(contents) is str: path = File(tokens[0], self)
-			elif type(contents) is dict: path = Directory(tokens[0], self)
+			path_type = None
+			if type(contents) is str: path_type = File
+			elif type(contents) is dict: path_type = Directory
 			else: raise TypeError()	# TODO: include types in function definition ??
+			path = path_type(tokens[0], self)
 			self.put_child(path)
+			return path
 
-	def _remove(self, p):
-		"""Removes the Path descendent with the specified relative path ``p``"""
+	def remove(self, p):
+		"""Remove the Path descendent with the specified relative path ``p``"""
 
+		if p.endswith(SEPARATOR): p = p[:-1]
 		tokens = p.split(SEPARATOR)
 		if len(tokens) > 1:
 			next_child = self.get_child(tokens[0])
 			if not type(next_child) is Directory:
 				raise DirectoryException(str(self) + (SEPARATOR + next_child) if next_child else '')	# if File or None
-			next_child._remove(SEPARATOR.join(tokens[1:]), contents)
+			next_child.remove(SEPARATOR.join(tokens[1:]), contents)
 		else: self.remove_child(p)
 
 	def __tokens(self):
-		"""Converts to a list of tokens in absolute path"""
+		"""Convert to a list of tokens in absolute path"""
 
 		return (self.parent.__tokens() if self.parent else []) + [self.name]
 	def __str__(self):
@@ -89,37 +92,51 @@ class Directory(Path):
 	def __init__(self, name, parent, validate_name=True):
 		super().__init__(name, parent, validate_name)
 		self.children = {}
+
 	def put_child(self, child): self.children[child.name] = child
+
 	def get_child(self, name):
 		if name == '.': return self
-		if name == '..': return self.parent
+		if name == '..': return self.parent if self.parent else self
+		if name.endswith(SEPARATOR): name = name[:-1]
 		try: return self.children[name]
-		except KeyError: raise NotFoundException((str(self) + SEPARATOR if self.name else '') + name)
+		except KeyError: raise NotFoundException()			# str will be formed in the main functions (get, has, ...)
+
 	def has_child(self, name):
-		if name == '.': return self
-		if name == '..': return self.parent
+		if name == '.': return True
+		if name == '..': return True	# if self is root, than just take root
+		if name.endswith(SEPARATOR): name = name[:-1]
 		return name in self.children
+
 	def remove_child(self, name):
 		if name in ('.', '..'): raise ValueError('Cannot remove current working directory or its parent!')
+		if name.endswith(SEPARATOR): name = name[:-1]
 		try: del self.children[name]
-		except KeyError: raise NotFoundException((str(self) + SEPARATOR if self.name else '') + name)
+		# this str will be cleaned up in the main functions
+		except KeyError: raise NotFoundException()
+
 	def __del__(self):
-		for child in self.children: del child
+		try:
+			for child in self.children: del child
+		except AttributeError: pass 		# hasn't been fully initiated, so ignore this part
 
 def get(p, t=None):
 	"""Get the Path instance with the specified path
 
 	p -- (str) the relative or absolute path
 	"""
-	path = None
-	if p.startswith(SEPARATOR):
-		# absolute path
-		path = root._get(p[1:])
-	else:
-		# relative path
-		path = cwd._get(p)
-	if t and type(path) != t: raise ValueError("'%s' is not a %s!" % (p, 'file' if t==File else 'directory'))
-	return path
+	if p == SEPARATOR and t != File: return root	# TODO: check if this belongs anywhere else too
+	try:
+		path = None
+		if p.startswith(SEPARATOR):
+			# absolute path
+			path = root.get(p[1:])
+		else:
+			# relative path
+			path = cwd.get(p)
+		if t and type(path) != t: raise ValueError("'%s' is not a %s!" % (p, 'file' if t==File else 'directory'))
+		return path
+	except PathException as e: raise type(e)(p)
 
 def create(p, contents):
 	"""Create a Path instance with the ``contents`` and puts it in the path ``p``
@@ -128,43 +145,54 @@ def create(p, contents):
 	contents -- (str|dict) this determines whether it is a file or a directory;
 		either the string contents of a file, or a dict of children for a directory
 	"""
+	# TODO: probably change ``contents`` to ``t`` and use a class as input
 
 	tokens = p.split(SEPARATOR)
 	location, name = tokens[:-1], tokens[-1]
 	if has(p): raise DuplicateException(name)
 
-	if p.startswith(SEPARATOR):
-		# absolute path
-		root._put(p[1:], contents)
-	else:
-		# relative path
-		cwd._put(p, contents)
+	try:
+		if p.startswith(SEPARATOR):
+			# absolute path
+			return root.create(p[1:], contents)
+		else:
+			# relative path
+			return cwd.create(p, contents)
+	except DirectoryException as e: raise DirectoryException(p)	# use relative path
 
 def remove(p):
-	if p.startswith(SEPARATOR):
-		# absolute path
-		root._remove(p[1:])
-	else:
-		# relative path
-		cwd._remove(p)
+	try:
+		if p.startswith(SEPARATOR):
+			# absolute path
+			root.remove(p[1:])
+		else:
+			# relative path
+			cwd.remove(p)
+	except PathException as e: raise type(e)(p)
 
-def has(p):
+def has(p, t=None):
 	"""Check whether a Path instance at path ``p`` exists
 
 	p -- (str) the relative or absolute path
 	"""
 
-	if p.startswith(SEPARATOR):
-		# absolute path
-		try: root._get(p[1:])
-		except (NotFoundException, DirectoryException): return False
-		return True
-	else:
-		# relative path
-		try: cwd._get(p)
-		except (NotFoundException, DirectoryException): return False
-		return True
+	try:
+		if p.startswith(SEPARATOR):
+			# absolute path
+			try:
+				path = root.get(p[1:])
+				return type(path) is t if t else True
+			except (NotFoundException, DirectoryException): return False
+		else:
+			# relative path
+			try:
+				path = cwd.get(p)
+				return type(path) is t if t else True
+			except (NotFoundException, DirectoryException): return False
+			return True
+	except DirectoryException: raise DirectoryException(p)
 
+# TODO: figure out how to pass multiple args as on value in Python
 def join(tokens):
 	return SEPARATOR.join(tokens)
 def split(p):
@@ -172,10 +200,10 @@ def split(p):
 def rstrip(p):
 	return p.rstrip(SEPARATOR)
 
-class IOException(Exception): pass	# note: different than IOError
-class NotFoundException(IOException): pass
-class DuplicateException(IOException): pass	# needed ?
-class DirectoryException(IOException):
+class PathException(Exception): pass	# note: different than IOError
+class NotFoundException(PathException): pass
+class DuplicateException(PathException): pass	# needed ?
+class DirectoryException(PathException):
 	"""When a nonexistent directory is used as a parent"""
 	pass
 

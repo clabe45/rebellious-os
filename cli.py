@@ -6,6 +6,7 @@ import env
 
 # TODO: consider making nonexistent variable references <foo> output itself <foo>, other than {undefined}
 # TODO: fix local variable / arguments (they're always undefined)
+# TODO: fix constants with <const_name> notation
 
 def get_input():
 	"""Read input, accounting for the multiline character r'\', and return concatenated result
