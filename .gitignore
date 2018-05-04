@@ -1,5 +1,7 @@
 # Python
 __pycache__
+build
+setup.py
 
 # Windows image file caches
 Thumbs.db

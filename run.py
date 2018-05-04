@@ -1,13 +1,20 @@
 import re
 import math
 import sys
+import os
 
 import cli
 import path
 import env
 import internal
-
-# TODO: change script and prog functions to store path (reference) instead of data (value), and remove update subcommand
+"""
+TODO: change script and prog functions to store path (reference) instead of data (value), and remove update subcommand
+and write files in a separate module (because this is getting huge!)
+TODO: figure out whether to end every error with '!' or not (and which ones if not)
+TODO: account for escaped semicolons when splitting in Script
+TODO: sometime, make an update_aliases function when the alias list is modified, for caching the tokenized alias/syntax pairs
+(for efficiency)
+"""
 
 class Runnable():
 	"""An object that can be run from the terminal"""
@@ -43,7 +50,7 @@ class Script(Runnable):
 		self.code = code
 	def execute(self, args, options, scope):	# I think the ``scope`` arg is pretty much irrelevant
 		super().execute(args, options, scope)
-		statements = re.split('\s*;\s*', self.code)
+		statements = re.split(r'(?:\\\\)*(?!\\);', self.code)	# TODO: what if it's in a string??
 		# TODO: change to 'argv' list when lists are supported
 		local = {'arg%d'%i:arg for i,arg in enumerate(args)} # The local scope (varname=>str, value=>str)
 		local['options'] = options
@@ -54,7 +61,9 @@ def find_alias(tokens):
 	"""return the syntax of the found alias or ``None``"""
 
 	for syntax in aliases:
-		s_tokens = cli.tokenize(syntax)
+		s_statements = cli.tokenize(syntax)
+		if len(s_statements) != 1: raise RuntimeError('Either zero or multiple statements in syntax: ' + syntax)
+		s_tokens = s_statements[0]
 
 		skip = False
 		if len(tokens) != len(s_tokens): skip = True
@@ -78,7 +87,10 @@ def fill_alias(syntax, tokens):
 
 	alias = aliases[syntax]
 	args = {}	# map, so I can dynamically add items all over the place (the keys are the indexes)
-	for x,token in enumerate(cli.tokenize(syntax)):
+
+	alias_statements = cli.tokenize(syntax)
+	if len(alias_statements) != 1: raise RuntimeError('Either zero or multiple statements in alias: ' + alias)
+	for x,token in enumerate(alias_statements[0]):
 		if token.isnumeric():
 			args[int(token)] = tokens[x]	# like args.put(x, tokens[0])
 
@@ -156,7 +168,7 @@ def read_function(args, options, scope):
 	if len(args) != 1: raise ArgumentCountException()
 	p = args[0]
 	file = path.get(p)
-	if not type(file) is path.File: raise ValueError("'%s' is not a file!" % p)
+	if not type(file) is path.File: raise ArgumentException("'%s' is not a file!" % p)
 	return file.data
 def write_function(args, options, scope):
 	if len(args) != 2: raise ArgumentCountException()
@@ -188,7 +200,9 @@ def get_function(args, options, scope):
 		sc = env.variables if global_ else scope
 		return sc[name]
 	except KeyError:
-		return '{undefined}'
+		return env.UNDEFINED_STRING
+def clear_function(args, options, scope):
+	os.system('cls' if os.name == 'nt' else 'clear')	# taken from https://stackoverflow.com/a/2084628/3783155
 
 # operators
 # logical
@@ -221,7 +235,7 @@ def and_function(args, options, scope):
 	return str(result).lower()
 
 # strings
-def append_function(args, options, scope):
+def concat_function(args, options, scope):
 	if len(args) < 2: raise ArgumentCountException()
 	return ''.join(args)
 
@@ -365,9 +379,11 @@ def alias_function(args, options, scope):
 	if len(args) < 1: raise ArgumentCountException()
 	subcommand = args[0]
 	syntax = args[1] if len(args) > 1 else None
+	if len(cli.tokenize(syntax) != 1): raise ArgumentException('Either zero or multiple statements in syntax: ' + syntax)
 	if subcommand == 'set':
 		if len(args) != 3: raise ArgumentCountException()
 		alias = args[2]
+		if len(cli.tokenize(alias) != 1): raise ArgumentException('Either zero or multiple statements in alias: ' + syntax)
 		aliases[syntax] = alias
 		return "Syntax '" + syntax + "' bound to '" + alias + "'"
 	elif subcommand == 'get':
@@ -406,7 +422,7 @@ programs = set([
 	Program('to', '', '<dir>', 'changes the current working directory to `dir`', to_function),
 	Program('makedir', '_', '<name>', 'creates a directory as `name`', make_directory_function),
 	Program('makefile', '_', '<name>', 'creates a file as `name`', make_file_function),
-	Program('del', '_', '<path>', 'deletes the item at `path`', delete_function),
+	Program('delete', '_', '<path>', 'deletes the item at `path`', delete_function),
 	Program('move', '_', '<old> <new>', 'changes the path of the item at `old` to `new`', move_function),
 	Program('read', '', '<path>', 'prints the contents of the file at `path`', read_function),
 	Program(
@@ -417,13 +433,14 @@ programs = set([
 		'set', '$', '<var> [value]', 'sets the environment variable `var` to `value`, or deletes if `value` is not provided',
 		set_function
 	),
+	Program('clear', '', '', 'clears the screen', clear_function),
 	Program('get', '$', '<var>', 'prints the environment variable `var`, exactly like \'echo <`var`>\'', get_function),
 	Program('eq', '', '<val1> <val2>', 'tests if `val1` equals `val2`', equal_function),
 	Program('neq', '', '<val1> <val2>', 'tests if `val1` doesn\'t equal `val2`', not_equal_function),
 	Program('not', '', '<bool>', 'negates `bool`', not_function),
 	Program('or', '', '<bool1> <bool2>', 'checks if either `bool1` or `bool2` are \'true\' inclusively', or_function),
 	Program('and', '', '<bool1> <bool2>', 'checks if both `bool1` and `bool2` are \'true\'', and_function),
-	Program('append', '', '<str1> <str2> [str3] ...', 'concatenates the strings in `str`', append_function),
+	Program('concat', '', '<str1> <str2> [str3] ...', 'concatenates the strings in `str`', concat_function),
 	Program('add', '', '<num1> <num2> [num3] ...', 'adds the numbers in `num`', add_function),
 	Program('sub', '', '<num1> <num2>', 'prints `num1` - `num2`', subtract_function),
 	Program('mul', '', '<num1> <num2> [num3] ...', 'multiplies the numbers in `num`', multiply_function),
@@ -470,6 +487,7 @@ aliases = {
 }
 
 class RunException(Exception): pass
+# I wish I could have this subclass ValueError, too, because it's a special version of a ValueError
 class ArgumentException(RunException): pass
 class ArgumentCountException(RunException): pass
 class OptionException(RunException): pass

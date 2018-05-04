@@ -1,7 +1,7 @@
 """
 You guess what it is :>
 """
-# TODO: LOOK FOR CROSS-REFERNCING (OKAY IN PYTHON?) for files
+# TODO: create ``format(s)`` function that precedes single quotes with backslashes and surrounds ``s`` with single quotes
 print('*REBELLIOUS OS loading...')
 
 import cli
@@ -11,8 +11,7 @@ import internal
 
 def boot():
 	while not internal.shutting_down:
-		i = input('%s > ' % str(path.cwd))
-		try: cli.process(i)
+		try: cli.process(cli.get_input())
 		except cli.EmptyException: pass
 		except cli.SyntaxException as e: print('Syntax error: %s'%str(e))	# TODO: make more specific
 		except run.NoSuchCommandException as e: print('*No such command \'%s\'!' % str(e))

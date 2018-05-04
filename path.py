@@ -1,13 +1,19 @@
+import re
+# ERR, this uses circular referencing, but I don't know how to do it any different way; TODO: maybe use weakref
+
 SEPARATOR = '/'
+SPECIAL_CHARACTERS_ALLOWED = '_-.';
+_SPECIAL_CHARACTERS_ALLOWED_REGEX = re.sub('-', '\\-', SPECIAL_CHARACTERS_ALLOWED)
 
 class Path():
-	def __init__(self, name, parent):
-		self.set_name(name)
+	def __init__(self, name, parent, validate_name=True):
+		if validate_name: self.set_name(name)
+		else: self.name = name
 		self.parent = parent
 
 	def set_name(self, new):
-		for bad in (SEPARATOR, '>'):	# TODO: probably add more
-			if bad in new: raise ValueError("Name cannot '%s' contain '%s'" % (new, bad))
+		if not re.match(r'^[a-zA-Z0-9 {}]+$'.format(_SPECIAL_CHARACTERS_ALLOWED_REGEX), new): 	# TODO: maybe extend in the future
+			raise ValueError('Invalid name: ' + new + '!')
 		if new.endswith('.'): raise ValueError("Name cannot end with '.'")
 		self.name = new
 
@@ -75,13 +81,13 @@ class Path():
 		return SEPARATOR if len(tokens) == 1 else SEPARATOR.join(tokens)
 
 class File(Path):
-	def __init__(self, name, parent):
-		super().__init__(name, parent)
+	def __init__(self, name, parent, validate_name=True):
+		super().__init__(name, parent, validate_name)
 		self.data = ''
 
 class Directory(Path):
-	def __init__(self, name, parent):
-		super().__init__(name, parent)
+	def __init__(self, name, parent, validate_name=True):
+		super().__init__(name, parent, validate_name)
 		self.children = {}
 	def put_child(self, child): self.children[child.name] = child
 	def get_child(self, name):
@@ -173,5 +179,5 @@ class DirectoryException(IOException):
 	"""When a nonexistent directory is used as a parent"""
 	pass
 
-root = Directory('', None)
+root = Directory('', None, False)
 cwd = root
