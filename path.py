@@ -42,8 +42,8 @@ class Path():
 			return next_child.get(SEPARATOR.join(tokens[1:]))
 		return next_child
 
-	def create(self, p, contents):
-		"""Create a new Path with contents and put it to the specified relative path ``p``"""
+	def create(self, p, t):
+		"""Create a new Path of type ``t`` and put it to the specified relative path ``p``"""
 
 		if p.endswith(SEPARATOR): p = p[:-1]
 		tokens = p.split(SEPARATOR)
@@ -51,13 +51,9 @@ class Path():
 			next_child = self.get_child(tokens[0])
 			if not type(next_child) is Directory:
 				raise DirectoryException(str(self) + (SEPARATOR + next_child) if next_child else '')	# if File or None
-			return next_child.create(SEPARATOR.join(tokens[1:]), contents)
+			return next_child.create(SEPARATOR.join(tokens[1:]), t)
 		else:
-			path_type = None
-			if type(contents) is str: path_type = File
-			elif type(contents) is dict: path_type = Directory
-			else: raise TypeError()	# TODO: include types in function definition ??
-			path = path_type(tokens[0], self)
+			path = t(tokens[0], self)
 			self.put_child(path)
 			return path
 
@@ -70,7 +66,7 @@ class Path():
 			next_child = self.get_child(tokens[0])
 			if not type(next_child) is Directory:
 				raise DirectoryException(str(self) + (SEPARATOR + next_child) if next_child else '')	# if File or None
-			next_child.remove(SEPARATOR.join(tokens[1:]), contents)
+			next_child.remove(SEPARATOR.join(tokens[1:]))
 		else: self.remove_child(p)
 
 	def __tokens(self):
@@ -87,6 +83,12 @@ class File(Path):
 	def __init__(self, name, parent, validate_name=True):
 		super().__init__(name, parent, validate_name)
 		self.data = ''
+	def read(self):
+		return self.data
+	def write(self, data, append=False):
+		if append: self.data += data
+		else: self.data = data
+	def flush(self): pass
 
 class Directory(Path):
 	def __init__(self, name, parent, validate_name=True):
@@ -138,14 +140,12 @@ def get(p, t=None):
 		return path
 	except PathException as e: raise type(e)(p)
 
-def create(p, contents):
-	"""Create a Path instance with the ``contents`` and puts it in the path ``p``
+def create(p, t):
+	"""Create a Path instance of type ``t`` and put it in the path ``p``
 
 	p -- (str) the relative or absolute path
-	contents -- (str|dict) this determines whether it is a file or a directory;
-		either the string contents of a file, or a dict of children for a directory
+	t -- (class) ``File`` or ``Directory``
 	"""
-	# TODO: probably change ``contents`` to ``t`` and use a class as input
 
 	tokens = p.split(SEPARATOR)
 	location, name = tokens[:-1], tokens[-1]
@@ -154,10 +154,10 @@ def create(p, contents):
 	try:
 		if p.startswith(SEPARATOR):
 			# absolute path
-			return root.create(p[1:], contents)
+			return root.create(p[1:], t)
 		else:
 			# relative path
-			return cwd.create(p, contents)
+			return cwd.create(p, t)
 	except DirectoryException as e: raise DirectoryException(p)	# use relative path
 
 def remove(p):

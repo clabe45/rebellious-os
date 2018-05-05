@@ -14,9 +14,9 @@ TODO: figure out whether to end every error with '!' or not (and which ones if n
 TODO: also figure out which commands should produce output and which ones shouldn't
 TODO: sometime, make an update_aliases function when the alias list is modified, for caching the tokenized alias/syntax pairs
 (for efficiency)
-TODO: add <strike>copy</strike>, gt, lt, ge, lt commands
-TODO: add documentation (descriptions) for the ^ option
+TODO-MORE?: add documentation (descriptions) for the ^ option
 TODO?: error wrong argument count, instead of no such command, with aliases with the wrong syntax (argument count)
+TODO: make `list` output directories first
 """
 
 class Runnable():
@@ -124,10 +124,9 @@ def list_function(args, options, scope):
 def to_function(args, options, scope):
 	if len(args) != 1: raise ArgumentCountException()
 	p = args[0]
-	dir = path.get(p)
-	if not type(dir) is path.Directory: raise ArgumentException("'%s' is not a directory!" % p)
+	dir = path.get(p, path.Directory)
 	path.cwd = dir
-def move_function(args, options, scope):	# TODO: *MOVE FILE*
+def move_function(args, options, scope):
 	if len(args) != 2: raise ArgumentCountException()
 	old, new = args
 	silent = '_' in args
@@ -144,7 +143,7 @@ def make_directory_function(args, options, scope):
 	p = args[0]
 
 	silent = '_' in options
-	try: path.create(p, {})
+	try: path.create(p, path.Directory)
 	except (path.DuplicateException,path.DirectoryException) as e:
 		if not silent: raise e
 def make_file_function(args, options, scope):
@@ -152,7 +151,7 @@ def make_file_function(args, options, scope):
 	p = args[0]
 	silent = '_' in options
 
-	try: path.create(p, '')
+	try: path.create(p, path.File)
 	except (path.DuplicateException,path.DirectoryException) as e:
 		if not silent: raise e
 def delete_function(args, options, scope):
@@ -163,27 +162,31 @@ def delete_function(args, options, scope):
 	p = args[0]
 	silent, recursive = '_' in options, '^' in options
 
-	if not silent:
-		if not confirm('*Delete file \'%s\'? ' % p): return
 	try:
+		file = path.get(p)
 		if recursive: path.get(p, path.Directory)
+		elif type(file) is path.Directory: raise ArgumentException('Please use the recursive flag `_` for directories.')
+		if not silent:
+			if not confirm('*Delete %s \'%s\'? ' % ('file' if type(file) is path.File else 'directory', p)): return
 		path.remove(p)	# the `recursive` options is for user clarity only
 	except (path.NotFoundException,path.DirectoryException) as e:
 		if not silent: raise e
 def copy_function(args, options, scope):
 	if len(args) != 2: raise ArgumentCountException()
 	sourcep, destp = args
-	source = path.get(sourcep)
 	recursive = '^' in options		# just for user clarity
+	source = path.get(sourcep, path.Directory if recursive else None)
+	if not recursive and type(source) is path.Directory:
+		raise ArgumentException('Please use the recursive flag `_` for directories.')
 	if not recursive:
 		copy_file(sourcep, destp)
 	else:
-		dest = path.create(destp, {}) if not path.has(destp) else path.get(destp)
+		dest = path.create(destp, path.Directory) if not path.has(destp) else path.get(destp)
 		copy_dir_recursive(source, dest, '.')
 def copy_dir_recursive(source, dest, rel_path):
 	if rel_path != '.':
 		# because root dest dir is created in copy_function
-		dest.create(rel_path, {}) if not path.has(rel_path) else path.get(rel_path)
+		dest.create(rel_path, path.Directory) if not path.has(rel_path) else path.get(rel_path)
 	source_child = source.get(rel_path)
 	for name in source_child.children:
 		if type(source_child.children[name]) is path.Directory:
@@ -195,32 +198,30 @@ def copy_dir_recursive(source, dest, rel_path):
 			)
 def copy_file(sourcep, destp):	# let's just assume the args are valid
 	source = path.get(sourcep, path.File)
-	if not path.has(destp, path.File): path.create(destp, source.data)
-	else: path.get(destp).data = source.data
+	dest = path.create(destp, path.File) \
+		if not path.has(destp, path.File) \
+		else path.get(destp)
+	dest.write(source.read())
 
 def read_function(args, options, scope):
 	if len(args) != 1: raise ArgumentCountException()
 	p = args[0]
-	file = path.get(p)
-	if not type(file) is path.File: raise ArgumentException("'%s' is not a file!" % p)
-	return file.data
+	file = path.get(p, path.File)
+	return file.read()
 def write_function(args, options, scope):
 	if len(args) != 2: raise ArgumentCountException()
 
 	p = args[0]
-	file = path.get(p)
-	if not type(file) is path.File: raise ArgumentException("'%s' is not a file!" % p)
+	file = path.get(p, path.File)
 	data = args[1]
 	append = '+' in options
 
-	if append:
-		file.data += data
-	else:
-		file.data = data
+	file.write(data, append)
 def set_function(args, options, scope):
 	if len(args) < 1: raise ArgumentCountException()
 	global_ = '$' in options
 	name = args[0]
+	if not env.validate_varname(name): raise ArgumentException('Invalid variable name: \'%s\'' % name) # TODO: move to cli module
 	sc = env.variables if global_ else scope
 	if len(args) == 2:
 		value = args[1]
@@ -375,14 +376,14 @@ def script_function(args, options, scope):
 		if len(args) != 5: raise ArgumentCountException()
 		name, options, arg_usage, description = args[1:]
 		file = path.get(name + '.' + SCRIPT_EXTENSION, path.File)
-		scripts.add(Script(name, options, arg_usage, description, file.data))
+		scripts.add(Script(name, options, arg_usage, description, file.read()))
 		return '*Created script \'%s\'!' % name
 	elif subcommand == 'update':
 		if len(args) != 2: raise ArgumentCountException()
 		name = args[1]
 		file = path.get(name + '.' + SCRIPT_EXTENSION, path.File)
 		script = get_script(name)
-		script.code = file.data
+		script.code = file.read()
 		return '*Script \'%s\' updated sucessfully!' % name
 	elif subcommand == 'remove':
 		if len(args) < 2: raise ArgumentCountException()
@@ -402,14 +403,14 @@ def program_function(args, options, scope):
 		if len(args) != 5: raise ArgumentCountException()
 		name, options, arg_usage, description = args[1:]
 		file = path.get(name + '.' + PROGRAM_EXTENSION, path.File)
-		programs.add(Program(name, options, arg_usage, description, _compile_program_fn(file.data)))
+		programs.add(Program(name, options, arg_usage, description, _compile_program_fn(file.read())))
 		return '*Created program \'%s\'!' % name
 	elif subcommand == 'update':
 		if len(args) != 2: raise ArgumentCountException()
 		name = args[1]
 		file = path.get(name + '.' + PROGRAM_EXTENSION, path.File)
 		program = get_program(name)
-		program.fn = _compile_program_fn(file.data)
+		program.fn = _compile_program_fn(file.read())
 		return '*Program \'%s\' updated sucessfully!' % name
 	elif subcommand == 'remove':
 		if len(args) < 2: raise ArgumentCountException()
@@ -518,7 +519,8 @@ programs = set([
 	Program('not', '', '<bool>', 'negates `bool`', not_function),
 	Program('or', '', '<bool1> <bool2>', 'checks if either `bool1` or `bool2` are \'true\' inclusively', or_function),
 	Program('and', '', '<bool1> <bool2>', 'checks if both `bool1` and `bool2` are \'true\'', and_function),
-	Program('concat', '', '<str1> <str2> [str3] ...', 'concatenates the strings in `str`', concat_function),
+	# instead of concat, use echo
+	# Program('concat', '', '<str1> <str2> [str3] ...', 'concatenates the strings in `str`', concat_function),
 	Program('add', '', '<num1> <num2> [num3] ...', 'adds the numbers in `num`', add_function),
 	Program('sub', '', '<num1> <num2>', 'prints `num1` - `num2`', subtract_function),
 	Program('mul', '', '<num1> <num2> [num3] ...', 'multiplies the numbers in `num`', multiply_function),

@@ -6,7 +6,6 @@ import env
 
 # TODO: consider making nonexistent variable references <foo> output itself <foo>, other than {undefined}
 # TODO: fix local variable / arguments (they're always undefined)
-# TODO: fix constants with <const_name> notation
 
 def get_input():
 	"""Read input, accounting for the multiline character r'\', and return concatenated result
@@ -176,7 +175,9 @@ def replace_vars(s, scope):
 
 		global_ = not local
 		sc = env.variables if (global_ or not scope) else scope
-		value = sc[name] if name in sc else env.UNDEFINED_STRING	# TODO: maybe change to '{unset}'
+		value = sc[name] if name in sc \
+			else env.CONSTANTS[name] if name in env.CONSTANTS \
+			else env.UNDEFINED_STRIN
 		s = s[:start] + value + s[end:]
 		m = re.search(expr, s)
 	return s
