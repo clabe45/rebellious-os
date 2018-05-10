@@ -5,7 +5,6 @@ import run
 import env
 
 # TODO: consider making nonexistent variable references <foo> output itself <foo>, other than {undefined}
-# TODO: fix local variable / arguments (they're always undefined)
 
 def get_input():
 	"""Read input, accounting for the multiline character r'\', and return concatenated result
@@ -36,7 +35,7 @@ def tokenize(i):
 	i -- zero or more statements in text form (str)
 	"""
 
-	# ugh
+	# this is awful
 	statements = [[]]	# empty 2D array of statements and then tokens
 	quotes_opened, raw, escaped, commented, curr_token = None, False, False, False, None
 	for x,c in enumerate(i):
@@ -48,7 +47,8 @@ def tokenize(i):
 			raw = True
 			continue
 		elif not escaped:
-			if not raw and c == '#': commented = True
+			if not raw and not quotes_opened and c == '#':
+				commented = True
 			if c in ("'", '"'):	# the quotes have nothing to do with being raw or not
 				if not quotes_opened:
 					# start token
@@ -80,28 +80,41 @@ def tokenize(i):
 		tokens = statements[-1]
 		tokens.append(curr_token)
 		curr_token = None
-	if quotes_opened: raise SyntaxException('open quotes at EOL!')
-	# print(statements)
+	if quotes_opened: raise SyntaxException('open quotes at EOF!')
 	return statements
 
-def process(i, scope=env.variables):
+def get_tokens(i):
+	"""Return the first statement in ``tokenize(i)`` or raise an error if zero or more than one statements"""
+
+	statements = tokenize(i)
+	if len(statements) != 1: raise ValueError('Either zero or multiple statements in \'%s\'!' % i)
+	return statements[0]
+
+def process(i, scope=None):
 	"""Run ``i`` as if it were typed into the terminal
 
 	scope -- (dict) the local scope of a script, if relevant
 	"""
+
+	if scope is None: scope = env.variables
 
 	i = re.sub(' +', ' ', i)
 	statements = tokenize(i)
 	for statement in statements:
 		process_statement(statement, scope)
 
-def process_statement(tokens, scope=env.variables, _piped_input=None):
+def process_statement(tokens, scope=None, _piped_input=None):
+	# weird happening: when I use ^ scope=env.variables, it assigns None to scope, even though env.variables has been inited
+	# this is because it was initiated in a function (yes, using the global keyword), but it's strange behavior
+	# (SO it when I get internet, self)
 	"""Run the single processed statement ``tokens`` as a list of tokens
 
 	tokens -- the statement (str)
 	scope -- the local scope of a script, if relevant (dict)
-	_piped_input -- (str) *not to be used outside of recursion;* the rest of the command when piping
+	_piped_input -- (str) *not to be used outside of recursion;* for chaining (stdout->stdin)
 	"""
+
+	if scope is None: scope = env.variables
 
 	pipe_idx = None
 	try: pipe_idx = tokens.index('|')
@@ -117,42 +130,38 @@ def process_statement(tokens, scope=env.variables, _piped_input=None):
 		if is_options(args[0]):
 			options = args[0]
 			args.pop(0)
-	for x,arg in enumerate(args): args[x] = use_special_characters(arg, scope)
+	for x,arg in enumerate(args): args[x] = _use_special_characters(arg, scope)
 
-	if _piped_input: args.append(_piped_input)
-
+	if not _piped_input: _piped_input = ''
 	args = [arg[1:-1] if arg[0] in ("'", '"') and arg[-1]==arg[0] else arg for arg in args]
-	for p in run.programs:
-		if p.name == command_name:
-			output = None
-			output = p.execute(args, options, scope)
+	for c in list(run.programs) + list(run.scripts):	# TODO: works?
+		if c.name == command_name:
+			output = c.execute(args, options, _piped_input, not pipe_idx is None, scope)
 			# except ValueError as e: print(str(e))
 
 			if pipe_idx:
 				rest_of_chain = tokens[pipe_idx+1:]
-				process(' '.join(rest_of_chain), scope, output)
+				tokens = get_tokens(' '.join(rest_of_chain))
+				process_statement(tokens, scope, output)
 			elif not output is None:
 				print(output)
 			break
 		syntax = run.find_alias(tokens)
 		if syntax:
-			process(run.fill_alias(syntax, tokens), scope)
+			tokens = get_tokens(run.fill_alias(syntax, tokens))
+			process_statement(tokens, scope, _piped_input)
 			break
-	else:
-		for script in run.scripts:
-			if script.name == command_name:
-				script.execute(args, options, scope)
-				break
-		else: raise run.NoSuchCommandException(command_name)
+	else: raise run.NoSuchCommandException(command_name)
 
 def is_options(token):
 	all_symbols = [c.isalnum() for c in token].count(True) == 0
-	contains_path_chars = [ch in token for ch in path.SPECIAL_CHARACTERS_ALLOWED + path.SEPARATOR].count(True) > 0
+	contains_path_chars = path.SEPARATOR in token 	# other path characters aren't reserved, so they can be used in both cases
+	contains_cli_chars = '|' in token
 	is_quoted = token[0] in ("'", '"') and token[0] == token[-1]
-	return all_symbols and not contains_path_chars and not is_quoted
+	return all_symbols and not (contains_path_chars or contains_cli_chars or is_quoted)
 
-def use_special_characters(s, scope):
-	s = replace_vars(s, scope)
+def _use_special_characters(s, scope):
+	s = _replace_vars(s, scope)
 	def unescape(m):
 		# remove the backslash only if the 2nd captured group is "escapable", or a valid character to be escaped
 		return m.group(1) if m.group(1) in '<>' else m.group(0)
@@ -160,10 +169,9 @@ def use_special_characters(s, scope):
 	# keep backslash if it doesn't escape a valid character
 	return re.sub(r'\\(.)', unescape, s)
 
-def replace_vars(s, scope):
+def _replace_vars(s, scope):
 	"""Substitutes variable (and constant) names for their respective values. Note that escaped characters are ignored"""
 
-	# TODO: exclude certain characters from varname, probably somewhere else though
 	expr = r'(\$)?(?<!\\)(?:\\\\)*<([^<>\\]+(?<!\\)(?:\\\\)*)>'	# matches $<varname> or <varname>
 	m = re.search(expr, s)
 	while m:
@@ -173,11 +181,9 @@ def replace_vars(s, scope):
 		end += len('>')
 		name = m.group(2)
 
-		global_ = not local
-		sc = env.variables if (global_ or not scope) else scope
-		value = sc[name] if name in sc \
-			else env.CONSTANTS[name] if name in env.CONSTANTS \
-			else env.UNDEFINED_STRIN
+		# output name if it's not a valid variable name
+		# escape < and > to prevenet infinite regex loop
+		value = env.get(name, scope if local else None) if env.validate_name(name) else '\<%s\>'%name
 		s = s[:start] + value + s[end:]
 		m = re.search(expr, s)
 	return s

@@ -1,0 +1,16 @@
+{
+  "aliases": {
+  	"!!!": "shutdown",
+  	"?": "help",
+  	"0 -> 1": "alias 0 1",
+  	"* 0": "makefile 0",
+  	"^ 0": "makedir 0",
+  	"+ 0 1": "copy 0 1",
+  	"~ 0 1": "move 0 1",
+  	"! 0": "delete 0",
+  	"- 0": "to 0",
+  	"/": "list",
+  	"/ 0": "list 0",
+  	"0 = 1": "set 0 1"
+  }
+}
