@@ -1,4 +1,4 @@
-# copies the path at source to dest
+# copies the path at `source` to `dest`
 # <source> <dest>
 # ^
 
