@@ -3,7 +3,7 @@ import os.path
 import cli
 import run
 import path
-import internal
+import user
 import session
 
 shutting_down = False
@@ -30,6 +30,8 @@ def boot():
 		except path.DirectoryException as e: print('*No such directory \'%s\'!' % str(e))
 
 def shutdown():
+	global shutting_down
+
 	print('*Shutting down...')
-	internal.shutting_down = True
+	shutting_down = True
 	session.save()

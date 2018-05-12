@@ -29,9 +29,8 @@ def tokenize(i):
 	 - and within each statement, tokens
 
 	Statements are separated by semicolons.
-	Tokens are separated by one or more spaces. Spaces can be escaped by surrounding them in quotes.
+	Tokens are separated by one or more whitespace characters. Spaces can be escaped by surrounding them in quotes.
 	Anything between a '#' and a newline or EOL are ignored as comments.
-	Very primitive, but... no RE!!
 	i -- zero or more statements in text form (str)
 	"""
 
@@ -60,7 +59,7 @@ def tokenize(i):
 		else: escaped = False
 
 		if not commented:
-			if not quotes_opened and c in ' \t;':
+			if not quotes_opened and c in ' \t\n\v\f\r;':	# whitespace and semilcolon
 				# either way, end token
 				if not curr_token is None:
 					tokens = statements[-1]
@@ -96,25 +95,18 @@ def process(i, scope=None):
 	scope -- (dict) the local scope of a script, if relevant
 	"""
 
-	if scope is None: scope = env.variables
-
 	i = re.sub(' +', ' ', i)
 	statements = tokenize(i)
 	for statement in statements:
 		process_statement(statement, scope)
 
 def process_statement(tokens, scope=None, _piped_input=None):
-	# weird happening: when I use ^ scope=env.variables, it assigns None to scope, even though env.variables has been inited
-	# this is because it was initiated in a function (yes, using the global keyword), but it's strange behavior
-	# (SO it when I get internet, self)
 	"""Run the single processed statement ``tokens`` as a list of tokens
 
 	tokens -- the statement (str)
 	scope -- the local scope of a script, if relevant (dict)
 	_piped_input -- (str) *not to be used outside of recursion;* for chaining (stdout->stdin)
 	"""
-
-	if scope is None: scope = env.variables
 
 	pipe_idx = None
 	try: pipe_idx = tokens.index('|')
@@ -172,18 +164,18 @@ def _use_special_characters(s, scope):
 def _replace_vars(s, scope):
 	"""Substitutes variable (and constant) names for their respective values. Note that escaped characters are ignored"""
 
-	expr = r'(\$)?(?<!\\)(?:\\\\)*<([^<>\\]+(?<!\\)(?:\\\\)*)>'	# matches $<varname> or <varname>
+	expr = r'([\$\*])?(?<!\\)(?:\\\\)*<([^<>\\]+(?<!\\)(?:\\\\)*)>'	# matches $<varname> or <varname>
 	m = re.search(expr, s)
 	while m:
-		local = bool(m.group(1))	# whether first option was chosen in | alternative
+		modifier = m.group(1)
 		start,end = m.span(2)
-		start -= len('$<') if local else len('<')
+		start -= 1 if not modifier is None else 0 + len('<')
 		end += len('>')
 		name = m.group(2)
 
 		# output name if it's not a valid variable name
 		# escape < and > to prevenet infinite regex loop
-		value = env.get(name, scope if local else None) if env.validate_name(name) else '\<%s\>'%name
+		value = env.get(name, scope, modifier) if env.validate_name(name) else '\<%s\>'%name
 		s = s[:start] + value + s[end:]
 		m = re.search(expr, s)
 	return s

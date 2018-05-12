@@ -11,6 +11,7 @@ import cli
 import env
 import internal
 import path
+import user
 import session
 """
 TODO: figure out whether to end every error with '!' or not (and which ones if not)
