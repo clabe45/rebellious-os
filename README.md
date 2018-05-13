@@ -42,7 +42,7 @@ For example:
 ```
 * reblleious              # makefile reblleious
 ~ reblleious rebellious   # move reblleious rebellious
-- rebellious              # delete rebellious
+! rebellious              # delete rebellious
 /                         # list
 
 a = <b>                   # set a <b> (which sets `a` to the value of `b`)
