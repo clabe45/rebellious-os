@@ -1,6 +1,5 @@
 import re
 import math
-import sys
 import os
 import os.path
 import traceback
@@ -11,8 +10,7 @@ import cli
 import env
 import internal
 import path
-import user
-import session
+import program
 """
 TODO: figure out whether to end every error with '!' or not (and which ones if not)
 TODO: also figure out which commands should produce output and which ones shouldn't
@@ -24,6 +22,7 @@ Maybe that's impossible because of the flexibility of aliases.
 TODO: prevent built in programs from being deleted with PERMISSIONS
 TODO?: figure out how to use ``run.ArgumentException`` instead of ``ArgumentException`` in programs
 TODO: only use <varname> syntax in ``echo``?
+TODO: reconsider using 'path' in documentation for core programs
 """
 
 SCRIPT_EXTENSION = 's'
@@ -59,40 +58,14 @@ class Program(Runnable):
 	def execute(self, args, options, stdin, piped, scope):
 		super().execute(args, options, stdin, piped, scope)
 		try:
-			fn = _compile_program_fn(path.get(self.path, path.File).read())
+			fn = program.compile_fn(path.get(self.path, path.File).read())
 			return fn(args, options, stdin, piped, scope)
 		except ArgumentCountException as e: raise ArgumentCountException(self.usage)
-		# TODO: print stacktrace
 		except Exception as e:
 			if not isinstance(e, (cli.CliException, path.PathException, RunException)):
 				print('An error occured during script execution:')
 				traceback.print_exc()
 			else: raise e
-
-def _compile_program_fn(code):
-	def fn(args, options, stdin, piped, scope):
-		output = _Logger() if piped else None
-		cache = sys.stdout
-		if piped: sys.stdout = output
-		# whoo! passing the global scope down (``None``) gives the user a lot of power
-
-		custom_scope = dict(globals())
-		custom_scope['argv'] = args
-		custom_scope['options'] = options
-		custom_scope['stdin'] = stdin
-		custom_scope['scope'] = scope
-		exec(code, custom_scope)
-		sys.stdout = cache
-		if piped: return str(output).rstrip('\n')
-		return None
-	return fn
-class _Logger():
-	def __init__(self):
-		self.text = ''
-	def write(self, s):
-		self.text += s
-	def flush(self): pass
-	def __str__(self): return self.text
 
 class Script(Runnable):
 	"""A primitive sequence of commands that can be run from the terminal, with a few special features"""

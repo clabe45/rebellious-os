@@ -4,7 +4,7 @@
 
 
 if stdin and len(argv) == 1: argv.append(stdin)
-if len(argv) != 2: raise ArgumentCountException()
+if len(argv) != 2: raise run.ArgumentCountException()
 
 p = argv[0]
 file = path.get(p, path.File)

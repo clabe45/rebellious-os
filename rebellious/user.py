@@ -18,9 +18,8 @@ def load_session(session):
     if session == 'presets': # first time opening VOS, so create new user
         print("***Welcome to Rebellious! Please create an admin account below:")
         create_user(True)
-        input()
-        internal.shutdown()
-    login()
+    else:
+        login()
 
 def login():
     """Prompt for username and password and log that user in."""
@@ -73,7 +72,9 @@ def create_user(admin_=False):
     if admin_:
         admin = username
         print("*Congratulation! the system's admin account has been set to yours.")
-    print("*Please restart for all services to work with your new account.")
+    print("*Please restart for all services to work with your new account.", end=" ")
+    input()
+    internal.shutdown()
 
 def validate_name(name):
     return not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name) is None

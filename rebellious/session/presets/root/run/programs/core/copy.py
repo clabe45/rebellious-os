@@ -25,13 +25,13 @@ def copy_file(sourcep, destp):	# let's just assume the args are valid
 
 
 if stdin and len(argv) == 1: argv.append(stdin)
-if len(argv) != 2: raise ArgumentCountException()
+if len(argv) != 2: raise run.ArgumentCountException()
 sourcep, destp = argv
 recursive = '^' in options		# just for user clarity
 source = path.get(sourcep, path.Directory if recursive else None)
 if not recursive:
 	if type(source) is path.Directory:
-		raise ArgumentException('Please use the recursive flag `^` for directories.')
+		raise run.ArgumentException('Please use the recursive flag `^` for directories.')
 
 	copy_file(sourcep, destp)
 else:

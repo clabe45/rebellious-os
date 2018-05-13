@@ -2,5 +2,5 @@
 #
 #
 
-if len(argv) > 0: raise ArgumentCountException()
+if len(argv) > 0: raise run.ArgumentCountException()
 internal.shutdown()

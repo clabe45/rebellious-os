@@ -3,10 +3,10 @@
 #
 
 if stdin and len(argv) == 1: argv.append(stdin)
-if len(argv) != 2: raise ArgumentCountException()
+if len(argv) != 2: raise run.ArgumentCountException()
 result = False
 for arg in argv:
-    if arg not in ('true', 'false'): raise ArgumentException("'%s' is not a boolean value" % arg)
+    if arg not in ('true', 'false'): raise run.ArgumentException("'%s' is not a boolean value" % arg)
     b = arg == 'true'
     result = result or b
 print(str(result).lower())
